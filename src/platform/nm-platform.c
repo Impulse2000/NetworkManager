@@ -3107,7 +3107,7 @@ nm_platform_link_to_string (const NMPlatformLink *link, char *buf, gsize len)
 	            str_addr ? " addr " : "",
 	            str_addr ? str_addr : "",
 	            link->inet6_token.id ? " inet6token " : "",
-	            link->inet6_token.id ? nm_utils_inet6_interface_identfier_to_token (link->inet6_token, str_inet6_token) : "",
+	            link->inet6_token.id ? nm_utils_inet6_interface_identifier_to_token (link->inet6_token, str_inet6_token) : "",
 	            link->driver ? " driver " : "",
 	            link->driver ? link->driver : "");
 	g_string_free (str_flags, TRUE);
