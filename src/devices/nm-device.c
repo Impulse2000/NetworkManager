@@ -11295,10 +11295,11 @@ nm_device_update_initial_hw_address (NMDevice *self)
 {
 	NMDevicePrivate *priv = NM_DEVICE_GET_PRIVATE (self);
 
-	if (priv->hw_addr_len) {
+	if (!nm_streq0 (priv->initial_hw_addr, priv->hw_addr)) {
 		g_free (priv->initial_hw_addr);
 		priv->initial_hw_addr = g_strdup (priv->hw_addr);
-		_LOGD (LOGD_DEVICE | LOGD_HW, "read initial MAC address %s", priv->initial_hw_addr);
+		_LOGD (LOGD_DEVICE, "hw-addr: update initial MAC address %s%s%s",
+		       NM_PRINT_FMT_QUOTE_STRING (priv->initial_hw_addr));
 	}
 }
 
