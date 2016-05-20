@@ -2089,6 +2089,7 @@ realize_start_setup (NMDevice *self, const NMPlatformLink *plink)
 
 	nm_device_update_hw_address (self);
 	nm_device_update_initial_hw_address (self);
+	nm_device_update_permanent_hw_address (self);
 
 	/* Note: initial hardware address must be read before calling get_ignore_carrier() */
 	config = nm_config_get ();
@@ -11298,7 +11299,15 @@ nm_device_update_initial_hw_address (NMDevice *self)
 		g_free (priv->initial_hw_addr);
 		priv->initial_hw_addr = g_strdup (priv->hw_addr);
 		_LOGD (LOGD_DEVICE | LOGD_HW, "read initial MAC address %s", priv->initial_hw_addr);
+	}
+}
 
+void
+nm_device_update_permanent_hw_address (NMDevice *self)
+{
+	NMDevicePrivate *priv = NM_DEVICE_GET_PRIVATE (self);
+
+	if (priv->hw_addr_len) {
 		if (priv->ifindex > 0) {
 			guint8 buf[NM_UTILS_HWADDR_LEN_MAX];
 			size_t len = 0;
