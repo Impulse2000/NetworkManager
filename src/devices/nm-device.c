@@ -2274,6 +2274,7 @@ nm_device_unrealize (NMDevice *self, gboolean remove_resources, GError **error)
 		_notify (self, PROP_UDI);
 	}
 	if (priv->hw_addr) {
+		priv->hw_addr_len = 0;
 		g_clear_pointer (&priv->hw_addr, g_free);
 		_notify (self, PROP_HW_ADDRESS);
 	}
@@ -11241,23 +11242,29 @@ nm_device_get_hw_address (NMDevice *self)
 	g_return_val_if_fail (NM_IS_DEVICE (self), NULL);
 	priv = NM_DEVICE_GET_PRIVATE (self);
 
-	return priv->hw_addr_len ? priv->hw_addr : NULL;
+	nm_assert ((!priv->hw_addr) ^ (priv->hw_addr_len > 0));
+
+	return priv->hw_addr;
 }
 
 void
 nm_device_update_hw_address (NMDevice *self)
 {
-	NMDevicePrivate *priv = NM_DEVICE_GET_PRIVATE (self);
-	int ifindex = nm_device_get_ifindex (self);
+	NMDevicePrivate *priv;
+	int ifindex;
 	const guint8 *hwaddr;
 	gsize hwaddrlen = 0;
 
+	ifindex = nm_device_get_ifindex (self);
 	if (ifindex <= 0)
 		return;
+
+	priv = NM_DEVICE_GET_PRIVATE (self);
 
 	hwaddr = nm_platform_link_get_address (NM_PLATFORM_GET, ifindex, &hwaddrlen);
 
 	if (   priv->type == NM_DEVICE_TYPE_ETHERNET
+	    && hwaddr
 	    && nm_utils_hwaddr_matches (hwaddr, hwaddrlen, nm_ip_addr_zero.addr_eth, sizeof (nm_ip_addr_zero.addr_eth)))
 		hwaddrlen = 0;
 
@@ -11267,7 +11274,7 @@ nm_device_update_hw_address (NMDevice *self)
 			g_free (priv->hw_addr);
 			priv->hw_addr = nm_utils_hwaddr_ntoa (hwaddr, hwaddrlen);
 
-			_LOGD (LOGD_HW | LOGD_DEVICE, "hardware address now %s", priv->hw_addr);
+			_LOGD (LOGD_HW | LOGD_DEVICE, "hw-addr: hardware address now %s", priv->hw_addr);
 			_notify (self, PROP_HW_ADDRESS);
 		}
 	} else {
@@ -11276,7 +11283,7 @@ nm_device_update_hw_address (NMDevice *self)
 			g_clear_pointer (&priv->hw_addr, g_free);
 			priv->hw_addr_len = 0;
 			_LOGD (LOGD_HW | LOGD_DEVICE,
-			       "previous hardware address is no longer valid");
+			       "hw-addr: previous hardware address is no longer valid");
 			_notify (self, PROP_HW_ADDRESS);
 		}
 	}
@@ -11533,6 +11540,8 @@ constructor (GType type,
 	NMDevice *self;
 	NMDevicePrivate *priv;
 	const NMPlatformLink *pllink;
+	const char *p;
+	guint count;
 
 	klass = G_OBJECT_CLASS (nm_device_parent_class);
 	object = klass->constructor (type, n_construct_params, construct_params);
@@ -11548,6 +11557,26 @@ constructor (GType type,
 		if (pllink && link_type_compatible (self, pllink->type, NULL, NULL)) {
 			priv->ifindex = pllink->ifindex;
 			priv->up = NM_FLAGS_HAS (pllink->n_ifi_flags, IFF_UP);
+		}
+	}
+
+	if (priv->hw_addr) {
+		/* Hardware address length is the number of ':' plus 1 */
+		count = 1;
+		for (p = priv->hw_addr; p && *p; p++) {
+			if (*p == ':')
+				count++;
+		}
+		if (count < ETH_ALEN || count > NM_UTILS_HWADDR_LEN_MAX) {
+			_LOGW (LOGD_DEVICE, "hw-addr: ignoring hardware address '%s' with unexpected length %d",
+			       priv->hw_addr, count);
+			g_clear_pointer (&priv->hw_addr, g_free);
+		} else if (!nm_utils_hwaddr_valid (priv->hw_addr, count)) {
+			_LOGW (LOGD_DEVICE, "hw-addr: could not parse hw-address '%s'", priv->hw_addr);
+			g_clear_pointer (&priv->hw_addr, g_free);
+		} else {
+			priv->hw_addr_len = count;
+			_LOGT (LOGD_DEVICE, "hw-addr: set current hw-address '%s'", priv->hw_addr);
 		}
 	}
 
@@ -11706,10 +11735,8 @@ static void
 set_property (GObject *object, guint prop_id,
               const GValue *value, GParamSpec *pspec)
 {
-	NMDevice *self = NM_DEVICE (object);
+	NMDevice *self = (NMDevice *) object;
 	NMDevicePrivate *priv = NM_DEVICE_GET_PRIVATE (self);
-	const char *hw_addr, *p;
-	guint count;
 
 	switch (prop_id) {
 	case PROP_UDI:
@@ -11789,30 +11816,7 @@ set_property (GObject *object, guint prop_id,
 		break;
 	case PROP_HW_ADDRESS:
 		/* construct only */
-		p = hw_addr = g_value_get_string (value);
-
-		/* Hardware address length is the number of ':' plus 1 */
-		count = 1;
-		while (p && *p) {
-			if (*p++ == ':')
-				count++;
-		}
-		if (count < ETH_ALEN || count > NM_UTILS_HWADDR_LEN_MAX) {
-			if (hw_addr && *hw_addr) {
-				_LOGW (LOGD_DEVICE, "ignoring hardware address '%s' with unexpected length %d",
-				       hw_addr, count);
-			}
-			break;
-		}
-
-		priv->hw_addr_len = count;
-		g_free (priv->hw_addr);
-		if (nm_utils_hwaddr_valid (hw_addr, priv->hw_addr_len))
-			priv->hw_addr = g_strdup (hw_addr);
-		else {
-			_LOGW (LOGD_DEVICE, "could not parse hw-address '%s'", hw_addr);
-			priv->hw_addr = NULL;
-		}
+		priv->hw_addr = g_value_dup_string (value);
 		break;
 	default:
 		G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
