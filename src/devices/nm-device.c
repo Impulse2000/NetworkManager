@@ -1614,6 +1614,7 @@ device_link_changed (NMDevice *self)
 	int ifindex;
 	gboolean was_up;
 	gboolean update_unmanaged_specs = FALSE;
+	gboolean got_hw_addr = FALSE, had_hw_addr;
 
 	priv->device_link_changed_id = 0;
 
@@ -1649,6 +1650,14 @@ device_link_changed (NMDevice *self)
 		g_free (priv->driver);
 		priv->driver = g_strdup (info.driver);
 		_notify (self, PROP_DRIVER);
+	}
+
+	had_hw_addr = (priv->hw_addr != NULL);
+	nm_device_update_hw_address (self);
+	if (!had_hw_addr && priv->hw_addr) {
+		got_hw_addr = TRUE;
+		nm_device_update_initial_hw_address (self);
+		nm_device_update_permanent_hw_address (self);
 	}
 
 	if (info.name[0] && strcmp (priv->iface, info.name) != 0) {
@@ -1740,6 +1749,20 @@ device_link_changed (NMDevice *self)
 
 	if (update_unmanaged_specs)
 		nm_device_set_unmanaged_by_user_settings (self, nm_settings_get_unmanaged_specs (priv->settings));
+
+	if (   got_hw_addr
+	    && !priv->up
+	    && nm_device_get_state (self) == NM_DEVICE_STATE_UNAVAILABLE) {
+		/*
+		 * If the device is UNAVAILABLE, any previous try to
+		 * bring it up probably has failed because of the
+		 * invalid hardware address; try again.
+		 */
+		nm_device_bring_up (self, TRUE, NULL);
+		nm_device_queue_recheck_available (self,
+		                                   NM_DEVICE_STATE_REASON_NONE,
+		                                   NM_DEVICE_STATE_REASON_NONE);
+	}
 
 	return G_SOURCE_REMOVE;
 }
