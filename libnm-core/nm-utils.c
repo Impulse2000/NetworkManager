@@ -3121,6 +3121,31 @@ hwaddr_binary_len (const char *asc)
 }
 
 /**
+ * _nm_utils_hwaddr_length:
+ * @asc: the ASCII representation of the hardware address
+ *
+ * Returns: if @asc is a valid representation of a hardware address
+ *   (of any length up to NM_UTILS_HWADDR_LEN_MAX), it returns the binary
+ *   length. Otherwise, 0 is returned.
+ */
+guint
+_nm_utils_hwaddr_length (const char *asc)
+{
+	int l;
+
+	if (!asc)
+		return 0;
+
+	l = hwaddr_binary_len (asc);
+	if (l <= 0 || l > NM_UTILS_HWADDR_LEN_MAX)
+		return 0;
+
+	if (!nm_utils_hwaddr_valid (asc, l))
+		return 0;
+	return l;
+}
+
+/**
  * nm_utils_hwaddr_valid:
  * @asc: the ASCII representation of a hardware address
  * @length: the length of address that @asc is expected to convert to
